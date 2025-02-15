@@ -53,6 +53,7 @@ void initOpenGL() {
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);  // Make the window non-resizable
 }
 
 GLuint createTexture(const PPMImage& img) {
@@ -81,32 +82,6 @@ std::string readShaderSource(const std::string& filename) {
     return shaderStream.str();
 }
 
-void checkShaderCompilation(GLuint shader) {
-    GLint success;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        GLint logLength;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
-        char* infoLog = new char[logLength];
-        glGetShaderInfoLog(shader, logLength, &logLength, infoLog);
-        std::cerr << "Shader Compilation Failed:\n" << infoLog << std::endl;
-        delete[] infoLog;
-    }
-}
-
-void checkProgramLinking(GLuint program) {
-    GLint success;
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if (!success) {
-        GLint logLength;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
-        char* infoLog = new char[logLength];
-        glGetProgramInfoLog(program, logLength, &logLength, infoLog);
-        std::cerr << "Program Linking Failed:\n" << infoLog << std::endl;
-        delete[] infoLog;
-    }
-}
-
 int main() {
     // Load the PPM image
     PPMImage img = loadPPM("base.ppm");
@@ -123,9 +98,6 @@ int main() {
     }
 
     glfwMakeContextCurrent(window);
-
-    // Disable window resizing
-    glfwSetWindowSizeLimits(window, img.width, img.height, img.width, img.height);
 
     // Initialize GLEW
     glewExperimental = GL_TRUE;
@@ -180,21 +152,18 @@ int main() {
     const char* vertexShaderCode = vertexShaderSource.c_str();
     glShaderSource(vertexShader, 1, &vertexShaderCode, nullptr);
     glCompileShader(vertexShader);
-    checkShaderCompilation(vertexShader);  // Ensure the shader compiles correctly
 
     // Create and compile fragment shader
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     const char* fragmentShaderCode = fragmentShaderSource.c_str();
     glShaderSource(fragmentShader, 1, &fragmentShaderCode, nullptr);
     glCompileShader(fragmentShader);
-    checkShaderCompilation(fragmentShader);  // Ensure the shader compiles correctly
 
     // Link shaders into a program
     GLuint shaderProgram = glCreateProgram();
     glAttachShader(shaderProgram, vertexShader);
     glAttachShader(shaderProgram, fragmentShader);
     glLinkProgram(shaderProgram);
-    checkProgramLinking(shaderProgram);  // Ensure the program links correctly
 
     glUseProgram(shaderProgram);
     glUniform1i(glGetUniformLocation(shaderProgram, "texture1"), 0);

@@ -1,0 +1,219 @@
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <vector>
+
+struct PPMImage {
+    int width, height;
+    std::vector<unsigned char> data;
+};
+
+PPMImage loadPPM(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+        exit(1);
+    }
+
+    std::string line;
+    std::getline(file, line);  // P3 header
+    if (line != "P3") {
+        std::cerr << "Not a valid PPM P3 file" << std::endl;
+        exit(1);
+    }
+
+    // Read width, height
+    int width, height, max_value;
+    file >> width >> height >> max_value;
+    file.ignore();  // Ignore the newline after max value
+
+    // Read pixel data
+    std::vector<unsigned char> data(width * height * 3); // RGB
+    for (int i = 0; i < width * height * 3; ++i) {
+        int value;
+        file >> value;
+        data[i] = static_cast<unsigned char>(value);
+    }
+
+    PPMImage img;
+    img.width = width;
+    img.height = height;
+    img.data = std::move(data);
+    return img;
+}
+
+void initOpenGL() {
+    if (!glfwInit()) {
+        std::cerr << "Failed to initialize GLFW" << std::endl;
+        exit(1);
+    }
+
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+}
+
+GLuint createTexture(const PPMImage& img) {
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img.width, img.height, 0, GL_RGB, GL_UNSIGNED_BYTE, img.data.data());
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    return texture;
+}
+
+std::string readShaderSource(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open shader file: " << filename << std::endl;
+        exit(1);
+    }
+
+    std::stringstream shaderStream;
+    shaderStream << file.rdbuf();
+    return shaderStream.str();
+}
+
+void checkShaderCompilation(GLuint shader) {
+    GLint success;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        GLint logLength;
+        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
+        char* infoLog = new char[logLength];
+        glGetShaderInfoLog(shader, logLength, &logLength, infoLog);
+        std::cerr << "Shader Compilation Failed:\n" << infoLog << std::endl;
+        delete[] infoLog;
+    }
+}
+
+void checkProgramLinking(GLuint program) {
+    GLint success;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success) {
+        GLint logLength;
+        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
+        char* infoLog = new char[logLength];
+        glGetProgramInfoLog(program, logLength, &logLength, infoLog);
+        std::cerr << "Program Linking Failed:\n" << infoLog << std::endl;
+        delete[] infoLog;
+    }
+}
+
+int main() {
+    // Load the PPM image
+    PPMImage img = loadPPM("base.ppm");
+
+    // Initialize GLFW
+    initOpenGL();
+
+    // Create GLFW window with dimensions of the PPM image
+    GLFWwindow* window = glfwCreateWindow(img.width, img.height, "PPM Viewer", nullptr, nullptr);
+    if (!window) {
+        std::cerr << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+
+    glfwMakeContextCurrent(window);
+
+    // Disable window resizing
+    glfwSetWindowSizeLimits(window, img.width, img.height, img.width, img.height);
+
+    // Initialize GLEW
+    glewExperimental = GL_TRUE;
+    if (glewInit() != GLEW_OK) {
+        std::cerr << "Failed to initialize GLEW" << std::endl;
+        return -1;
+    }
+
+    // Create the texture from the PPM image
+    GLuint texture = createTexture(img);
+
+    GLfloat vertices[] = {
+        -1.0f,  1.0f, 0.0f, 0.0f, 0.0f,  // Top-left: Flip the texture Y (from 1.0f to 0.0f)
+        -1.0f, -1.0f, 0.0f, 0.0f, 1.0f,  // Bottom-left: Flip the texture Y (from 0.0f to 1.0f)
+         1.0f, -1.0f, 0.0f, 1.0f, 1.0f,  // Bottom-right: Flip the texture Y (from 0.0f to 1.0f)
+         1.0f,  1.0f, 0.0f, 1.0f, 0.0f   // Top-right: Flip the texture Y (from 1.0f to 0.0f)
+    };
+
+    GLuint indices[] = {
+        0, 1, 2,
+        0, 2, 3
+    };
+
+    GLuint VBO, VAO, EBO;
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+    glGenBuffers(1, &EBO);
+
+    glBindVertexArray(VAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), (GLvoid*)0);
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), (GLvoid*)(3 * sizeof(GLfloat)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    // Load shaders from files
+    std::string vertexShaderSource = readShaderSource("vertex_shader.glsl");
+    std::string fragmentShaderSource = readShaderSource("fragment_shader.glsl");
+
+    // Create and compile vertex shader
+    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    const char* vertexShaderCode = vertexShaderSource.c_str();
+    glShaderSource(vertexShader, 1, &vertexShaderCode, nullptr);
+    glCompileShader(vertexShader);
+    checkShaderCompilation(vertexShader);  // Ensure the shader compiles correctly
+
+    // Create and compile fragment shader
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    const char* fragmentShaderCode = fragmentShaderSource.c_str();
+    glShaderSource(fragmentShader, 1, &fragmentShaderCode, nullptr);
+    glCompileShader(fragmentShader);
+    checkShaderCompilation(fragmentShader);  // Ensure the shader compiles correctly
+
+    // Link shaders into a program
+    GLuint shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+    checkProgramLinking(shaderProgram);  // Ensure the program links correctly
+
+    glUseProgram(shaderProgram);
+    glUniform1i(glGetUniformLocation(shaderProgram, "texture1"), 0);
+
+    // Render loop
+    while (!glfwWindowShouldClose(window)) {
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+
+        glBindVertexArray(VAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        glBindVertexArray(0);
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    glfwTerminate();
+    return 0;
+}

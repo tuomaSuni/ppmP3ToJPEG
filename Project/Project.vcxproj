@@ -131,6 +131,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Viewer.cpp" />
+    <ClCompile Include="Viewer.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="vertex_shader.glsl" />
